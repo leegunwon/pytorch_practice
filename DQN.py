@@ -104,9 +104,9 @@ class ReplayBuffer():
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(4, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64, 3)
+        self.fc1 = nn.Linear(4, 128)
+        self.fc2 = nn.Linear(128, 128)
+        self.fc3 = nn.Linear(128, 3)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -154,7 +154,7 @@ def main():
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)     # optimizer 설정 Adam 사용
 
     for n_epi in range(5000):
-        epsilon = max(0.01, 0.8 - 0.01 * n_epi / 50)
+        epsilon = max(0.01, 0.8 - 0.01 * n_epi / 20)
         s = env.reset()
         done = False
         a_history = [3]
