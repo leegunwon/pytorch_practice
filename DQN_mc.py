@@ -11,7 +11,8 @@ import torch.optim as optim
 learning_rate = 0.0005
 gamma = 0.98
 buffer_limit = 50000
-batch_size = 16
+batch_size = 1   # MC이므로 한 에피소드 사용
+
 
 class SingleMachine():
     def __init__(self):
@@ -22,7 +23,7 @@ class SingleMachine():
 
     def step(self, a):
 
-        if a[-1] ==0:
+        if a[-1] == 0:
             if a[-2] == 1:
                 self.oper_time += 5
             elif a[-2] == 2:
@@ -30,7 +31,7 @@ class SingleMachine():
             self.a_left -= 1
             self.oper_time += 10
 
-        elif a[-1] ==1:
+        elif a[-1] == 1:
             if a[-2] == 0:
                 self.oper_time += 10
             elif a[-2] == 2:
@@ -38,7 +39,7 @@ class SingleMachine():
             self.b_left -= 1
             self.oper_time += 20
 
-        elif a[-1] ==2:
+        elif a[-1] == 2:
             if a[-2] == 0:
                 self.oper_time += 10
             elif a[-2] == 2:
@@ -61,7 +62,8 @@ class SingleMachine():
         self.b_left = 10
         self.c_left = 10
         self.oper_time = 0
-        s = np.array([self.a_left, self.b_left, self.c_left, self.oper_time]) # [남은 A 작업 수, 남은 B 작업 수, 남은 C 작업 수, 현재 시간]
+        s = np.array(
+            [self.a_left, self.b_left, self.c_left, self.oper_time])  # [남은 A 작업 수, 남은 B 작업 수, 남은 C 작업 수, 현재 시간]
         return s
 
     def done(self):
@@ -76,7 +78,7 @@ class SingleMachine():
 
 class ReplayBuffer():
     def __init__(self):
-        self.buffer = collections.deque(maxlen=buffer_limit) # double-ended queue 양방향에서 데이터를 처리할 수 있는 queue형 자료구조를 의미한다
+        self.buffer = collections.deque(maxlen=buffer_limit)
 
     def put(self, transition):
         self.buffer.append(transition)
@@ -85,13 +87,14 @@ class ReplayBuffer():
         mini_batch = random.sample(self.buffer, n)
         s_lst, a_lst, r_lst, s_prime_lst, done_mask_lst = [], [], [], [], []
 
-        for transition in mini_batch:
-            s, a, r, s_prime, done_mask = transition
-            s_lst.append(s)
-            a_lst.append([a])
-            r_lst.append([r])
-            s_prime_lst.append(s_prime)
-            done_mask_lst.append([done_mask])
+        for bat_ch in mini_batch:
+            for transition in bat_ch:
+                s, a, r, s_prime, done_mask = transition
+                s_lst.append(s)
+                a_lst.append([a])
+                r_lst.append([r])
+                s_prime_lst.append(s_prime)
+                done_mask_lst.append([done_mask])
 
         return torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst), \
             torch.tensor(r_lst), torch.tensor(s_prime_lst, dtype=torch.float), \
@@ -124,6 +127,8 @@ class Qnet(nn.Module):
 
 
 def train(q, q_target, memory, optimizer):
+    history = memory.sample(batch_size)
+
     for i in range(10):
         s, a, r, s_prime, done_mask = memory.sample(batch_size)
 
@@ -151,35 +156,42 @@ def main():
 
     print_interval = 20
     score = 0.0
-    optimizer = optim.Adam(q.parameters(), lr=learning_rate)     # optimizer 설정 Adam 사용
+    optimizer = optim.Adam(q.parameters(), lr=learning_rate)  # optimizer 설정 Adam 사용
 
     for n_epi in range(5000):
         epsilon = max(0.01, 0.08 - 0.01 * (n_epi / 200))
         s = env.reset()
         done = False
         a_history = [3]
-
+        history = []
         while not done:
             a = q.sample_action(torch.from_numpy(s).float(), epsilon)
             a_history.append(a)
             s_prime, r, done = env.step(a_history)
             done_mask = 0.0 if done else 1.0
 
-            memory.put((s, a, r / 100.0, s_prime, done_mask))
+            history.append((s, a, r/100.0, s_prime, done_mask))
             s = s_prime
 
             score += r
             if done:
                 break
 
+        memory.put(history)
+
         if memory.size() > 2000:
             train(q, q_target, memory, optimizer)
 
         if n_epi % print_interval == 0 and n_epi != 0:
-            q_target.load_state_dict(q.state_dict())    # q_target 업데이트 20번에 한번 씩
+            q_target.load_state_dict(q.state_dict())  # q_target 업데이트 20번에 한번 씩
             print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
                 n_epi, score / print_interval, memory.size(), epsilon * 100))
             score = 0.0
+
+
+
+
+
 
     score = 0.0
     epsilon = 0
@@ -197,7 +209,9 @@ def main():
         score += r
         if done:
             break
+
     print(score)
+
 
 if __name__ == '__main__':
     main()
