@@ -8,9 +8,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 # Hyperparameters
-learning_rate = 0.0005
+learning_rate = 1
 gamma = 0.98
-buffer_limit = 50000
+buffer_limit = 10000
 batch_size = 16
 
 class SingleMachine():
@@ -41,7 +41,7 @@ class SingleMachine():
         elif a[-1] ==2:
             if a[-2] == 0:
                 self.oper_time += 10
-            elif a[-2] == 2:
+            elif a[-2] == 1:
                 self.oper_time += 5
             self.c_left -= 1
             self.oper_time += 30
@@ -49,7 +49,7 @@ class SingleMachine():
         r, done = self.done()
 
         if done:
-            if a.count(2) == 3:
+            if a.count(2) == 4:
                 r += 20
 
         s = np.array([self.a_left, self.b_left, self.c_left, self.oper_time])
@@ -104,9 +104,9 @@ class ReplayBuffer():
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 3)
+        self.fc1 = nn.Linear(4, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, 3)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -124,7 +124,7 @@ class Qnet(nn.Module):
 
 
 def train(q, q_target, memory, optimizer):
-    for i in range(10):
+    for i in range(20):
         s, a, r, s_prime, done_mask = memory.sample(batch_size)
 
 
@@ -154,7 +154,7 @@ def main():
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)     # optimizer 설정 Adam 사용
 
     for n_epi in range(5000):
-        epsilon = max(0.01, 0.08 - 0.01 * (n_epi / 200))
+        epsilon = max(0.01, 0.8 - 0.01 * n_epi / 50)
         s = env.reset()
         done = False
         a_history = [3]
@@ -165,7 +165,7 @@ def main():
             s_prime, r, done = env.step(a_history)
             done_mask = 0.0 if done else 1.0
 
-            memory.put((s, a, r / 100.0, s_prime, done_mask))
+            memory.put((s, a, r, s_prime, done_mask))
             s = s_prime
 
             score += r
@@ -177,8 +177,8 @@ def main():
 
         if n_epi % print_interval == 0 and n_epi != 0:
             q_target.load_state_dict(q.state_dict())    # q_target 업데이트 20번에 한번 씩
-            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
-                n_epi, score / print_interval, memory.size(), epsilon * 100))
+            # print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
+               #  n_epi, score / print_interval, memory.size(), epsilon * 100))
             score = 0.0
 
     score = 0.0
@@ -200,4 +200,5 @@ def main():
     print(score)
 
 if __name__ == '__main__':
-    main()
+    for i in range(7):
+        main()

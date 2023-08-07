@@ -8,10 +8,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 # Hyperparameters
-learning_rate = 0.0005
+learning_rate = 1
 gamma = 0.98
-buffer_limit = 50000
-batch_size = 1   # MC이므로 한 에피소드 사용
+buffer_limit = 2500
+batch_size = 4   # MC이므로 한 에피소드 사용
 
 
 class SingleMachine():
@@ -50,7 +50,7 @@ class SingleMachine():
         r, done = self.done()
 
         if done:
-            if a.count(2) == 3:
+            if a.count(2) == 4:
                 r += 20
 
         s = np.array([self.a_left, self.b_left, self.c_left, self.oper_time])
@@ -107,9 +107,9 @@ class ReplayBuffer():
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 3)
+        self.fc1 = nn.Linear(4, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, 3)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -129,9 +129,8 @@ class Qnet(nn.Module):
 def train(q, q_target, memory, optimizer):
     history = memory.sample(batch_size)
 
-    for i in range(10):
+    for i in range(20):
         s, a, r, s_prime, done_mask = memory.sample(batch_size)
-
 
         q_out = q(s)
         q_a = torch.gather(q_out, 1, a)       # q_out tensor에서 a 자리에 있는 열들 중 a값에 해당하는 위치를 인덱싱해서 뽑아옴
@@ -159,7 +158,7 @@ def main():
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)  # optimizer 설정 Adam 사용
 
     for n_epi in range(5000):
-        epsilon = max(0.01, 0.08 - 0.01 * (n_epi / 200))
+        epsilon = max(0.01, 0.8 - 0.01 * (n_epi/ 50))
         s = env.reset()
         done = False
         a_history = [3]
@@ -170,7 +169,7 @@ def main():
             s_prime, r, done = env.step(a_history)
             done_mask = 0.0 if done else 1.0
 
-            history.append((s, a, r/100.0, s_prime, done_mask))
+            history.append((s, a, r, s_prime, done_mask))
             s = s_prime
 
             score += r
@@ -179,13 +178,13 @@ def main():
 
         memory.put(history)
 
-        if memory.size() > 2000:
+        if memory.size() > 500:
             train(q, q_target, memory, optimizer)
 
         if n_epi % print_interval == 0 and n_epi != 0:
             q_target.load_state_dict(q.state_dict())  # q_target 업데이트 20번에 한번 씩
-            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
-                n_epi, score / print_interval, memory.size(), epsilon * 100))
+            # print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
+            #     n_epi, score / print_interval, memory.size(), epsilon * 100))
             score = 0.0
 
 
@@ -214,4 +213,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    for i in range(7):
+        main()
