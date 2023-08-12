@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 # Hyperparameters
-learning_rate = 1
+learning_rate = 0.05
 gamma = 0.98
 buffer_limit = 10000
 batch_size = 16
@@ -22,26 +22,26 @@ class SingleMachine():
 
     def step(self, a):
 
-        if a[-1] ==0:
-            if a[-2] == 1:
+        if a[-2] ==0:
+            if a[-1] == 1:
                 self.oper_time += 5
-            elif a[-2] == 2:
+            elif a[-1] == 2:
                 self.oper_time += 5
             self.a_left -= 1
             self.oper_time += 10
 
-        elif a[-1] ==1:
-            if a[-2] == 0:
+        elif a[-2] ==1:
+            if a[-1] == 0:
                 self.oper_time += 10
-            elif a[-2] == 2:
+            elif a[-1] == 2:
                 self.oper_time += 5
             self.b_left -= 1
             self.oper_time += 20
 
-        elif a[-1] ==2:
-            if a[-2] == 0:
-                self.oper_time += 10
-            elif a[-2] == 1:
+        elif a[-2] ==2:
+            if a[-1] == 0:
+                self.oper_time += 5
+            elif a[-1] == 1:
                 self.oper_time += 5
             self.c_left -= 1
             self.oper_time += 30
@@ -154,10 +154,10 @@ def main():
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)     # optimizer 설정 Adam 사용
 
     for n_epi in range(5000):
-        epsilon = max(0.01, 0.8 - 0.01 * n_epi / 20)
+        epsilon = max(0.01, 0.5 - 0.01 * n_epi / 20)
         s = env.reset()
         done = False
-        a_history = [3]
+        a_history = [2]
 
         while not done:
             a = q.sample_action(torch.from_numpy(s).float(), epsilon)
@@ -185,7 +185,7 @@ def main():
     epsilon = 0
     s = env.reset()
     done = False
-    a_history = [3]
+    a_history = [2]
     while not done:
         a = q.sample_action(torch.from_numpy(s).float(), epsilon)
         a_history.append(a)

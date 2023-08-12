@@ -8,10 +8,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 # Hyperparameters
-learning_rate = 0.005
+learning_rate = 0.0005
 gamma = 1
 buffer_limit = 2500
-batch_size = 4   # MC이므로 한 에피소드 사용
+batch_size = 16   # MC이므로 한 에피소드 사용
 
 
 class SingleMachine():
@@ -23,26 +23,26 @@ class SingleMachine():
 
     def step(self, a):
 
-        if a[-1] == 0:
-            if a[-2] == 1:
+        if a[-2] == 0:
+            if a[-1] == 1:
                 self.oper_time += 5
-            elif a[-2] == 2:
+            elif a[-1] == 2:
                 self.oper_time += 5
             self.a_left -= 1
             self.oper_time += 10
 
-        elif a[-1] == 1:
-            if a[-2] == 0:
+        elif a[-2] == 1:
+            if a[-1] == 0:
                 self.oper_time += 10
-            elif a[-2] == 2:
+            elif a[-1] == 2:
                 self.oper_time += 5
             self.b_left -= 1
             self.oper_time += 20
 
-        elif a[-1] == 2:
-            if a[-2] == 0:
-                self.oper_time += 10
-            elif a[-2] == 2:
+        elif a[-2] == 2:
+            if a[-1] == 0:
+                self.oper_time += 5
+            elif a[-1] == 1:
                 self.oper_time += 5
             self.c_left -= 1
             self.oper_time += 30
@@ -85,20 +85,18 @@ class ReplayBuffer():
 
     def sample(self, n):
         mini_batch = random.sample(self.buffer, n)
-        s_lst, a_lst, r_lst, s_prime_lst, done_mask_lst = [], [], [], [], []
+        s_lst, a_lst, r_lst, done_mask_lst, score_lst = [], [], [], [], []
 
-        for bat_ch in mini_batch:
-            for transition in bat_ch:
-                s, a, r, s_prime, done_mask = transition
-                s_lst.append(s)
-                a_lst.append([a])
-                r_lst.append([r])
-                s_prime_lst.append(s_prime)
-                done_mask_lst.append([done_mask])
+        for transition in mini_batch:
+            s, a, r, done_mask, score = transition
+            score_lst.append(score)
+            s_lst.append(s)
+            a_lst.append([a])
+            r_lst.append([r])
+            done_mask_lst.append([done_mask])
 
         return torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst), \
-            torch.tensor(r_lst), torch.tensor(s_prime_lst, dtype=torch.float), \
-            torch.tensor(done_mask_lst)
+            torch.tensor(r_lst), torch.tensor(done_mask_lst), torch.tensor(score_lst)
 
     def size(self):
         return len(self.buffer)
@@ -129,13 +127,15 @@ class Qnet(nn.Module):
 def train(q, q_target, memory, optimizer):
 
     for i in range(20):
-        s, a, r, s_prime, done_mask = memory.sample(batch_size)
+        s, a, r, done_mask, score = memory.sample(batch_size)
+        # MC이므로 한 에피소드 사용 - 충족
+        # MC 경우 한 에피소드를 한번에 불러와서 학습 - 충족
+        # MC의 경우 에피소드 끝에서 리턴 값을 바탕으로 학습한 뒤 한단계씩 앞으로 가면서 학습 - 충족
 
         q_out = q(s)
         q_a = torch.gather(q_out, 1, a)       # q_out tensor에서 a 자리에 있는 열들 중 a값에 해당하는 위치를 인덱싱해서 뽑아옴
-        q_targ = q_target(s).gather(1, a)
-        target = r + gamma * q_targ * done_mask   #
-        loss = F.smooth_l1_loss(q_a, target)   # smooth_l1_loss 함수는 Huber loss 함수와 같음
+        score = score.unsqueeze(1)
+        loss = F.smooth_l1_loss(q_a, score)   # smooth_l1_loss 함수는 Huber loss 함수와 같음
 
 
         optimizer.zero_grad()
@@ -151,38 +151,35 @@ def main():
     memory = ReplayBuffer()
 
     print_interval = 20
-    score = 0.0
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)  # optimizer 설정 Adam 사용
 
     for n_epi in range(5000):
-        epsilon = max(0.01, 0.8 - 0.01 * (n_epi/ 50))
+        epsilon = max(0.01, 0.5 - 0.03 * (n_epi/ 200))
         s = env.reset()
+        score = 0.0
         done = False
-        a_history = [3]
-        history = []
+        a_history = [2]
         while not done:
             a = q.sample_action(torch.from_numpy(s).float(), epsilon)
             a_history.append(a)
             s_prime, r, done = env.step(a_history)
             done_mask = 0.0 if done else 1.0
-
-            history.append((s, a, r, s_prime, done_mask))
+            score += r
+            memory.put((s, a, r, done_mask, score))
             s = s_prime
 
-            score += r
+
             if done:
                 break
 
-        memory.put(history)
 
         if memory.size() > 500:
             train(q, q_target, memory, optimizer)
 
         if n_epi % print_interval == 0 and n_epi != 0:
             q_target.load_state_dict(q.state_dict())  # q_target 업데이트 20번에 한번 씩
-            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
-                 n_epi, score / print_interval, memory.size(), epsilon * 100))
-            score = 0.0
+            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}".format(
+                 n_epi, score, memory.size(), epsilon * 100, a_history))
 
 
 
@@ -193,22 +190,20 @@ def main():
     epsilon = 0
     s = env.reset()
     done = False
-    a_history = [3]
+    a_history = [2]
     while not done:
         a = q.sample_action(torch.from_numpy(s).float(), epsilon)
         a_history.append(a)
         s_prime, r, done = env.step(a_history)
         done_mask = 0.0 if done else 1.0
-        memory.put((s, a, r / 100.0, s_prime, done_mask))
         s = s_prime
 
         score += r
         if done:
             break
 
-    print(score)
+    print(score, a_history)
 
 
 if __name__ == '__main__':
-    for i in range(7):
-        main()
+    main()

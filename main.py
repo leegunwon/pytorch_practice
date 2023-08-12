@@ -1,119 +1,137 @@
-import gym
-import collections
 import random
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-
-# Hyperparameters
-learning_rate = 0.0005
-gamma = 0.98
-buffer_limit = 50000
-batch_size = 32
+import numpy as np
 
 
-class ReplayBuffer():
+class GridWorld():
     def __init__(self):
-        self.buffer = collections.deque(maxlen=buffer_limit)
+        self.x = 0
+        self.y = 0
 
-    def put(self, transition):
-        self.buffer.append(transition)
+    def step(self, a):
+        # 0번 액션: 왼쪽, 1번 액션: 위, 2번 액션: 오른쪽, 3번 액션: 아래쪽
+        if a == 0:
+            self.move_left()
+        elif a == 1:
+            self.move_up()
+        elif a == 2:
+            self.move_right()
+        elif a == 3:
+            self.move_down()
 
-    def sample(self, n):
-        mini_batch = random.sample(self.buffer, n)
-        s_lst, a_lst, r_lst, s_prime_lst, done_mask_lst = [], [], [], [], []
+        reward = -1  # 보상은 항상 -1로 고정
+        done = self.is_done()
+        return (self.x, self.y), reward, done
 
-        for transition in mini_batch:
-            s, a, r, s_prime, done_mask = transition
-            s_lst.append(s)
-            a_lst.append([a])
-            r_lst.append([r])
-            s_prime_lst.append(s_prime)
-            done_mask_lst.append([done_mask])
-
-        return torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst), \
-            torch.tensor(r_lst), torch.tensor(s_prime_lst, dtype=torch.float), \
-            torch.tensor(done_mask_lst)
-
-    def size(self):
-        return len(self.buffer)
-
-
-class Qnet(nn.Module):
-    def __init__(self):
-        super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 2)
-
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-    def sample_action(self, obs, epsilon):
-        out = self.forward(obs)
-        coin = random.random()
-        if coin < epsilon:
-            return random.randint(0, 1)
+    def move_left(self):
+        if self.y == 0:
+            pass
+        elif self.y == 3 and self.x in [0, 1, 2]:
+            pass
+        elif self.y == 5 and self.x in [2, 3, 4]:
+            pass
         else:
-            return out.argmax().item()
+            self.y -= 1
+
+    def move_right(self):
+        if self.y == 1 and self.x in [0, 1, 2]:
+            pass
+        elif self.y == 3 and self.x in [2, 3, 4]:
+            pass
+        elif self.y == 6:
+            pass
+        else:
+            self.y += 1
+
+    def move_up(self):
+        if self.x == 0:
+            pass
+        elif self.x == 3 and self.y == 2:
+            pass
+        else:
+            self.x -= 1
+
+    def move_down(self):
+        if self.x == 4:
+            pass
+        elif self.x == 1 and self.y == 4:
+            pass
+        else:
+            self.x += 1
+
+    def is_done(self):
+        if self.x == 4 and self.y == 6:  # 목표 지점인 (4,6)에 도달하면 끝난다
+            return True
+        else:
+            return False
+
+    def reset(self):
+        self.x = 0
+        self.y = 0
+        return (self.x, self.y)
 
 
-def train(q, q_target, memory, optimizer):
-    for i in range(10):
-        s, a, r, s_prime, done_mask = memory.sample(batch_size)
+class QAgent():
+    def __init__(self):
+        self.q_table = np.zeros((5, 7, 4))  # q벨류를 저장하는 변수. 모두 0으로 초기화.
+        self.eps = 0.9
+        self.alpha = 0.01
 
-        q_out = q(s)
-        q_a = q_out.gather(1, a) #
-        max_q_prime = q_target(s_prime).max(1)[0].unsqueeze(1)
-        target = r + gamma * max_q_prime * done_mask
-        loss = F.smooth_l1_loss(q_a, target)
+    def select_action(self, s):
+        # eps-greedy로 액션을 선택
+        x, y = s
+        coin = random.random()
+        if coin < self.eps:
+            action = random.randint(0, 3)
+        else:
+            action_val = self.q_table[x, y, :]
+            action = np.argmax(action_val)
+        return action
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+    def update_table(self, history):
+        # 한 에피소드에 해당하는 history를 입력으로 받아 q 테이블의 값을 업데이트 한다
+        cum_reward = 0
+        for transition in history[::-1]:
+            s, a, r, s_prime = transition
+            x, y = s
+            # 몬테 카를로 방식을 이용하여 업데이트.
+            self.q_table[x, y, a] = self.q_table[x, y, a] + self.alpha * (cum_reward - self.q_table[x, y, a])
+            cum_reward = cum_reward + r
+
+    def anneal_eps(self):
+        self.eps -= 0.03
+        self.eps = max(self.eps, 0.1)
+
+    def show_table(self):
+        # 학습이 각 위치에서 어느 액션의 q 값이 가장 높았는지 보여주는 함수
+        q_lst = self.q_table.tolist()
+        data = np.zeros((5, 7))
+        for row_idx in range(len(q_lst)):
+            row = q_lst[row_idx]
+            for col_idx in range(len(row)):
+                col = row[col_idx]
+                action = np.argmax(col)
+                data[row_idx, col_idx] = action
+        print(data)
 
 
 def main():
-    env = gym.make('CartPole-v1')
-    q = Qnet()
-    q_target = Qnet()
-    q_target.load_state_dict(q.state_dict())
-    memory = ReplayBuffer()
+    env = GridWorld()
+    agent = QAgent()
 
-    print_interval = 20
-    score = 0.0
-    optimizer = optim.Adam(q.parameters(), lr=learning_rate)
-
-    for n_epi in range(10000):
-        epsilon = max(0.01, 0.08 - 0.01 * (n_epi / 200))  # Linear annealing from 8% to 1%
-        s, _ = env.reset()
+    for n_epi in range(1000):  # 총 1,000 에피소드 동안 학습
         done = False
+        history = []
 
-        while not done:
-            a = q.sample_action(torch.from_numpy(s).float(), epsilon)
-            s_prime, r, done, truncated, info = env.step(a)
-            done_mask = 0.0 if done else 1.0
-            memory.put((s, a, r / 100.0, s_prime, done_mask))
+        s = env.reset()
+        while not done:  # 한 에피소드가 끝날 때 까지
+            a = agent.select_action(s)
+            s_prime, r, done = env.step(a)
+            history.append((s, a, r, s_prime))
             s = s_prime
+        agent.update_table(history)  # 히스토리를 이용하여 에이전트를 업데이트
+        agent.anneal_eps()
 
-            score += r
-            if done:
-                break
-
-        if memory.size() > 2000:
-            train(q, q_target, memory, optimizer)
-
-        if n_epi % print_interval == 0 and n_epi != 0:
-            q_target.load_state_dict(q.state_dict())
-            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
-                n_epi, score / print_interval, memory.size(), epsilon * 100))
-            score = 0.0
-    env.close()
+    agent.show_table()  # 학습이 끝난 결과를 출력
 
 
 if __name__ == '__main__':
