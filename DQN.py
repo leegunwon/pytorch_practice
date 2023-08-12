@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 # Hyperparameters
-learning_rate = 0.05
+learning_rate = 0.5
 gamma = 0.98
 buffer_limit = 10000
 batch_size = 16
@@ -22,7 +22,7 @@ class SingleMachine():
 
     def step(self, a):
 
-        if a[-2] ==0:
+        if a[-2] == 0:
             if a[-1] == 1:
                 self.oper_time += 5
             elif a[-1] == 2:
@@ -30,7 +30,7 @@ class SingleMachine():
             self.a_left -= 1
             self.oper_time += 10
 
-        elif a[-2] ==1:
+        elif a[-2] == 1:
             if a[-1] == 0:
                 self.oper_time += 10
             elif a[-1] == 2:
@@ -38,7 +38,7 @@ class SingleMachine():
             self.b_left -= 1
             self.oper_time += 20
 
-        elif a[-2] ==2:
+        elif a[-2] == 2:
             if a[-1] == 0:
                 self.oper_time += 5
             elif a[-1] == 1:
@@ -47,10 +47,8 @@ class SingleMachine():
             self.oper_time += 30
 
         r, done = self.done()
-
-        if done:
-            if a.count(2) == 4:
-                r += 20
+        if a == [2, 2, 2, 2]:
+            r += 20
 
         s = np.array([self.a_left, self.b_left, self.c_left, self.oper_time])
 

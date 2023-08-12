@@ -1,6 +1,7 @@
 import numpy as np
 import collections
 import random
+import plotly.graph_objects as go
 
 import torch
 import torch.nn as nn
@@ -8,9 +9,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 # Hyperparameters
-learning_rate = 0.0005
-gamma = 1
-buffer_limit = 2500
+learning_rate = 1
+gamma = 1.0
+buffer_limit = 10000
 batch_size = 16   # MC이므로 한 에피소드 사용
 
 
@@ -48,10 +49,9 @@ class SingleMachine():
             self.oper_time += 30
 
         r, done = self.done()
+        if a == [2, 2, 2, 2]:
+            r += 20
 
-        if done:
-            if a.count(2) == 4:
-                r += 20
 
         s = np.array([self.a_left, self.b_left, self.c_left, self.oper_time])
 
@@ -105,9 +105,9 @@ class ReplayBuffer():
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 3)
+        self.fc1 = nn.Linear(4, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, 3)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -152,6 +152,7 @@ def main():
 
     print_interval = 20
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)  # optimizer 설정 Adam 사용
+    sc_history = []
 
     for n_epi in range(5000):
         epsilon = max(0.01, 0.5 - 0.03 * (n_epi/ 200))
@@ -171,13 +172,13 @@ def main():
 
             if done:
                 break
-
+        sc_history.append(score)
 
         if memory.size() > 500:
             train(q, q_target, memory, optimizer)
 
         if n_epi % print_interval == 0 and n_epi != 0:
-            q_target.load_state_dict(q.state_dict())  # q_target 업데이트 20번에 한번 씩
+            # q_target.load_state_dict(q.state_dict())  # q_target 업데이트 20번에 한번 씩
             print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}".format(
                  n_epi, score, memory.size(), epsilon * 100, a_history))
 
@@ -195,15 +196,16 @@ def main():
         a = q.sample_action(torch.from_numpy(s).float(), epsilon)
         a_history.append(a)
         s_prime, r, done = env.step(a_history)
-        done_mask = 0.0 if done else 1.0
         s = s_prime
 
         score += r
         if done:
             break
 
-    print(score, a_history)
-
+    print("score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}".format(
+        score, memory.size(), epsilon * 100, a_history))
+    figure = go.Figure()
+    figure.add_trace(go.Scatter(x=np.arange(len(sc_history)), y=sc_history, name='score'))
 
 if __name__ == '__main__':
     main()
