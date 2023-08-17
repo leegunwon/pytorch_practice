@@ -9,9 +9,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 # Hyperparameters
-learning_rate = 1
-gamma = 1.0
-buffer_limit = 10000
+learning_rate = 0.001
+gamma = 0.98
+buffer_limit = 25000
 batch_size = 16   # MC이므로 한 에피소드 사용
 
 
@@ -24,26 +24,26 @@ class SingleMachine():
 
     def step(self, a):
 
-        if a[-2] == 0:
-            if a[-1] == 1:
+        if a[-1] == 0:
+            if a[-2] == 1:
                 self.oper_time += 5
-            elif a[-1] == 2:
+            elif a[-2] == 2:
                 self.oper_time += 5
             self.a_left -= 1
             self.oper_time += 10
 
-        elif a[-2] == 1:
-            if a[-1] == 0:
+        elif a[-1] == 1:
+            if a[-2] == 0:
                 self.oper_time += 10
-            elif a[-1] == 2:
+            elif a[-2] == 2:
                 self.oper_time += 5
             self.b_left -= 1
             self.oper_time += 20
 
-        elif a[-2] == 2:
-            if a[-1] == 0:
+        elif a[-1] == 2:
+            if a[-2] == 0:
                 self.oper_time += 5
-            elif a[-1] == 1:
+            elif a[-2] == 1:
                 self.oper_time += 5
             self.c_left -= 1
             self.oper_time += 30
@@ -124,9 +124,9 @@ class Qnet(nn.Module):
             return out.argmax().item()
 
 
-def train(q, q_target, memory, optimizer):
+def train(q, memory, optimizer):
 
-    for i in range(20):
+    for i in range(10):
         s, a, r, done_mask, score = memory.sample(batch_size)
         # MC이므로 한 에피소드 사용 - 충족
         # MC 경우 한 에피소드를 한번에 불러와서 학습 - 충족
@@ -137,7 +137,6 @@ def train(q, q_target, memory, optimizer):
         score = score.unsqueeze(1)
         loss = F.smooth_l1_loss(q_a, score)   # smooth_l1_loss 함수는 Huber loss 함수와 같음
 
-
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -146,15 +145,13 @@ def train(q, q_target, memory, optimizer):
 def main():
     env = SingleMachine()
     q = Qnet()
-    q_target = Qnet()
-    q_target.load_state_dict(q.state_dict())
     memory = ReplayBuffer()
 
     print_interval = 20
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)  # optimizer 설정 Adam 사용
     sc_history = []
 
-    for n_epi in range(5000):
+    for n_epi in range(10000):
         epsilon = max(0.01, 0.5 - 0.03 * (n_epi/ 200))
         s = env.reset()
         score = 0.0
@@ -175,16 +172,11 @@ def main():
         sc_history.append(score)
 
         if memory.size() > 500:
-            train(q, q_target, memory, optimizer)
+            train(q, memory, optimizer)
 
         if n_epi % print_interval == 0 and n_epi != 0:
-            # q_target.load_state_dict(q.state_dict())  # q_target 업데이트 20번에 한번 씩
-            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}".format(
-                 n_epi, score, memory.size(), epsilon * 100, a_history))
-
-
-
-
+            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}, {}".format(
+                 n_epi, score, memory.size(), epsilon * 100, a_history, q.sample_action(torch.tensor([10,10,10,0]).float(), 0)))
 
 
     score = 0.0
@@ -202,8 +194,8 @@ def main():
         if done:
             break
 
-    print("score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}".format(
-        score, memory.size(), epsilon * 100, a_history))
+    print("score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}, {}".format(
+        score, memory.size(), epsilon * 100, a_history, q.forward(torch.tensor([10,10,10,0]).float())))
     figure = go.Figure()
     figure.add_trace(go.Scatter(x=np.arange(len(sc_history)), y=sc_history, name='score'))
 

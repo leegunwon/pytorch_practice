@@ -8,9 +8,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 # Hyperparameters
-learning_rate = 0.5
+learning_rate = 0.05
 gamma = 0.98
-buffer_limit = 10000
+buffer_limit = 25000
 batch_size = 16
 
 class SingleMachine():
@@ -22,26 +22,26 @@ class SingleMachine():
 
     def step(self, a):
 
-        if a[-2] == 0:
-            if a[-1] == 1:
+        if a[-1] == 0:
+            if a[-2] == 1:
                 self.oper_time += 5
-            elif a[-1] == 2:
+            elif a[-2] == 2:
                 self.oper_time += 5
             self.a_left -= 1
             self.oper_time += 10
 
-        elif a[-2] == 1:
-            if a[-1] == 0:
+        elif a[-1] == 1:
+            if a[-2] == 0:
                 self.oper_time += 10
-            elif a[-1] == 2:
+            elif a[-2] == 2:
                 self.oper_time += 5
             self.b_left -= 1
             self.oper_time += 20
 
-        elif a[-2] == 2:
-            if a[-1] == 0:
+        elif a[-1] == 2:
+            if a[-2] == 0:
                 self.oper_time += 5
-            elif a[-1] == 1:
+            elif a[-2] == 1:
                 self.oper_time += 5
             self.c_left -= 1
             self.oper_time += 30
@@ -122,7 +122,7 @@ class Qnet(nn.Module):
 
 
 def train(q, q_target, memory, optimizer):
-    for i in range(20):
+    for i in range(10):
         s, a, r, s_prime, done_mask = memory.sample(batch_size)
 
 
@@ -175,8 +175,9 @@ def main():
 
         if n_epi % print_interval == 0 and n_epi != 0:
             q_target.load_state_dict(q.state_dict())    # q_target 업데이트 20번에 한번 씩
-            # print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
-               #  n_epi, score / print_interval, memory.size(), epsilon * 100))
+            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}, {}".format(
+                n_epi, score/print_interval, memory.size(), epsilon * 100, a_history,
+                q.sample_action(torch.tensor([10, 10, 10, 0]).float(), 0)))
             score = 0.0
 
     score = 0.0
@@ -195,8 +196,9 @@ def main():
         score += r
         if done:
             break
-    print(score)
+    print("score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}, {}".format(
+        score / print_interval, memory.size(), epsilon * 100, a_history,
+        q.sample_action(torch.tensor([10, 10, 10, 0]).float(), 0)))
 
 if __name__ == '__main__':
-    for i in range(7):
-        main()
+    main()
