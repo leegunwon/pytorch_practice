@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 # Hyperparameters
-learning_rate = 0.001
+learning_rate = 1
 gamma = 0.98
 buffer_limit = 25000
 batch_size = 16   # MC이므로 한 에피소드 사용
@@ -87,16 +87,16 @@ class ReplayBuffer():
         mini_batch = random.sample(self.buffer, n)
         s_lst, a_lst, r_lst, done_mask_lst, score_lst = [], [], [], [], []
 
-        for transition in mini_batch:
-            s, a, r, done_mask, score = transition
-            score_lst.append(score)
-            s_lst.append(s)
-            a_lst.append([a])
-            r_lst.append([r])
-            done_mask_lst.append([done_mask])
+        for episode in mini_batch:
+            for transition in episode:
+                s, a, r, done_mask = transition
+                s_lst.append(s)
+                a_lst.append([a])
+                r_lst.append([r])
+                done_mask_lst.append([done_mask])
 
         return torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst), \
-            torch.tensor(r_lst), torch.tensor(done_mask_lst), torch.tensor(score_lst)
+            torch.tensor(r_lst), torch.tensor(done_mask_lst)
 
     def size(self):
         return len(self.buffer)
@@ -127,15 +127,19 @@ class Qnet(nn.Module):
 def train(q, memory, optimizer):
 
     for i in range(10):
-        s, a, r, done_mask, score = memory.sample(batch_size)
+        s, a, r, done_mask = memory.sample(1)
         # MC이므로 한 에피소드 사용 - 충족
         # MC 경우 한 에피소드를 한번에 불러와서 학습 - 충족
         # MC의 경우 에피소드 끝에서 리턴 값을 바탕으로 학습한 뒤 한단계씩 앞으로 가면서 학습 - 충족
-
         q_out = q(s)
         q_a = torch.gather(q_out, 1, a)       # q_out tensor에서 a 자리에 있는 열들 중 a값에 해당하는 위치를 인덱싱해서 뽑아옴
-        score = score.unsqueeze(1)
-        loss = F.smooth_l1_loss(q_a, score)   # smooth_l1_loss 함수는 Huber loss 함수와 같음
+        sum_reward = [0]*len(r)
+        sum = 0
+        for i in range(len(r)):
+            sum += r[i]
+            sum_reward[i] = sum
+        sum_reward = torch.tensor(sum_reward).unsqueeze(1)
+        loss = F.smooth_l1_loss(q_a, sum_reward)   # smooth_l1_loss 함수는 Huber loss 함수와 같음
 
         optimizer.zero_grad()
         loss.backward()
@@ -152,24 +156,26 @@ def main():
     sc_history = []
 
     for n_epi in range(10000):
-        epsilon = max(0.01, 0.5 - 0.03 * (n_epi/ 200))
+        epsilon = max(0.01, 0.7 - 0.03 * (n_epi/ 200))
         s = env.reset()
         score = 0.0
         done = False
         a_history = [2]
+        history = collections.deque()
         while not done:
             a = q.sample_action(torch.from_numpy(s).float(), epsilon)
             a_history.append(a)
             s_prime, r, done = env.step(a_history)
             done_mask = 0.0 if done else 1.0
             score += r
-            memory.put((s, a, r, done_mask, score))
+            history.appendleft([s, a, r, done_mask])
             s = s_prime
 
 
             if done:
                 break
         sc_history.append(score)
+        memory.put(history)
 
         if memory.size() > 500:
             train(q, memory, optimizer)
