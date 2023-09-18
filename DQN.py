@@ -8,8 +8,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 # Hyperparameters
-learning_rate = 0.05
-gamma = 0.98
+learning_rate = 1
+gamma = 0.99
 buffer_limit = 25000
 batch_size = 16
 
@@ -50,6 +50,7 @@ class SingleMachine():
         if a == [2, 2, 2, 2]:
             r += 20
 
+
         s = np.array([self.a_left, self.b_left, self.c_left, self.oper_time])
 
         return s, r, done
@@ -59,7 +60,8 @@ class SingleMachine():
         self.b_left = 10
         self.c_left = 10
         self.oper_time = 0
-        s = np.array([self.a_left, self.b_left, self.c_left, self.oper_time]) # [남은 A 작업 수, 남은 B 작업 수, 남은 C 작업 수, 현재 시간]
+        s = np.array(
+            [self.a_left, self.b_left, self.c_left, self.oper_time])  # [남은 A 작업 수, 남은 B 작업 수, 남은 C 작업 수, 현재 시간]
         return s
 
     def done(self):
@@ -70,7 +72,6 @@ class SingleMachine():
             return 0, True
         else:
             return 1, False
-
 
 class ReplayBuffer():
     def __init__(self):
@@ -102,9 +103,9 @@ class ReplayBuffer():
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 3)
+        self.fc1 = nn.Linear(4, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, 3)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -122,10 +123,9 @@ class Qnet(nn.Module):
 
 
 def train(q, q_target, memory, optimizer):
+
     for i in range(10):
         s, a, r, s_prime, done_mask = memory.sample(batch_size)
-
-
         q_out = q(s)
         q_a = torch.gather(q_out, 1, a)       # q_out tensor에서 a 자리에 있는 열들 중 a값에 해당하는 위치를 인덱싱해서 뽑아옴
         max_q_prime = q_target(s_prime).max(1)[0].unsqueeze(1)  # unsqueeze 함수 1일 경우 차원이 하나씩 증가함
@@ -133,7 +133,6 @@ def train(q, q_target, memory, optimizer):
         # i+1 숫자 만큼 대괄호를 걷어내고 나서 가장 큰 값들을 뽑아옴
         target = r + gamma * max_q_prime * done_mask   #
         loss = F.smooth_l1_loss(q_a, target)   # smooth_l1_loss 함수는 Huber loss 함수와 같음
-
 
         optimizer.zero_grad()
         loss.backward()
@@ -152,7 +151,7 @@ def main():
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)     # optimizer 설정 Adam 사용
 
     for n_epi in range(5000):
-        epsilon = max(0.01, 0.5 - 0.01 * n_epi / 20)
+        epsilon = max(0.01, 0.5 - 0.01 * n_epi / 200)
         s = env.reset()
         done = False
         a_history = [2]
@@ -177,7 +176,7 @@ def main():
             q_target.load_state_dict(q.state_dict())    # q_target 업데이트 20번에 한번 씩
             print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}, {}".format(
                 n_epi, score/print_interval, memory.size(), epsilon * 100, a_history,
-                q.sample_action(torch.tensor([10, 10, 10, 0]).float(), 0)))
+                q.forward(torch.tensor([10,10,10,0]).float())))
             score = 0.0
 
     score = 0.0
@@ -190,14 +189,13 @@ def main():
         a_history.append(a)
         s_prime, r, done = env.step(a_history)
         done_mask = 0.0 if done else 1.0
-        memory.put((s, a, r / 100.0, s_prime, done_mask))
         s = s_prime
 
         score += r
         if done:
             break
-    print("score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}, {}".format(
-        score / print_interval, memory.size(), epsilon * 100, a_history,
+    print("score : {:.1f}, eps : {:.1f}% sqs : {}, {}".format(
+        score, epsilon * 100, a_history,
         q.sample_action(torch.tensor([10, 10, 10, 0]).float(), 0)))
 
 if __name__ == '__main__':

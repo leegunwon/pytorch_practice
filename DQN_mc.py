@@ -182,7 +182,7 @@ def main():
 
         if n_epi % print_interval == 0 and n_epi != 0:
             print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}% sqs : {}, {}".format(
-                 n_epi, score, memory.size(), epsilon * 100, a_history, q.sample_action(torch.tensor([10,10,10,0]).float(), 0)))
+                 n_epi, score, memory.size(), epsilon * 100, a_history, q.forward(torch.tensor([10,10,10,0]).float())))
 
 
     score = 0.0
