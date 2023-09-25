@@ -4,13 +4,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Normal
+import plotly.graph_objects as go
+import numpy as np
+import time
 
 # Hyperparameters
-learning_rate = 0.0003
+learning_rate = 0.0005
 gamma = 0.9
 lmbda = 0.9
 eps_clip = 0.2
-K_epoch = 10
+K_epoch = 8
 rollout_len = 3
 buffer_size = 10
 minibatch_size = 32
@@ -26,12 +29,12 @@ class PPO(nn.Module):
         self.fc_std = nn.Linear(128, 1)
         self.fc_v = nn.Linear(128, 1)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
-        self.optimization_step = 0  # 이건 뭐지?
+        self.optimization_step = 0
 
-    def pi(self, x, softmax_dim=0):   # 아마도 pi는 policy network를 의미하는 것 같다.
+    def pi(self, x, softmax_dim=0):
         x = F.relu(self.fc1(x))
-        mu = 2.0 * torch.tanh(self.fc_mu(x))   #
-        std = F.softplus(self.fc_std(x))
+        mu = 2.0 * torch.tanh(self.fc_mu(x))     # 평균 생성
+        std = F.softplus(self.fc_std(x))        # 표준 편차
         return mu, std
 
     def v(self, x):
@@ -127,8 +130,11 @@ def main():
     score = 0.0
     print_interval = 20
     rollout = []
+    score_list = []
+    max_score_list = []
+    max_score = -1000
 
-    for n_epi in range(10000):
+    for n_epi in range(5000):
         s, _ = env.reset()
         done = False
         count = 0
@@ -147,17 +153,31 @@ def main():
 
                 s = s_prime
                 score += r
+                if score > max_score:
+                    max_score = score
                 count += 1
 
             model.train_net()
 
         if n_epi % print_interval == 0 and n_epi != 0:
-            print("# of episode :{}, avg score : {:.1f}, optmization step: {}".format(n_epi, score / print_interval,
-                                                                                      model.optimization_step))
+            print("# of episode :{}, avg score : {:.1f}".format(n_epi, score / print_interval))
+            score_list.append(score / print_interval)
+            max_score_list.append(max_score)
+            max_score = -1000
             score = 0.0
+
 
     env.close()
 
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=np.arange(len(score_list)), y=score_list, mode='lines', name='score'))
+    fig.add_trace(go.Scatter(x=np.arange(len(max_score_list)), y=max_score_list, mode='lines', name='max_score'))
+    fig.show()
+    fig.write_html("ppo_ep___.html")
+
 
 if __name__ == '__main__':
+    t1 = time.time()
     main()
+    t2 = time.time()
+    print(t2 - t1)

@@ -115,7 +115,8 @@ def test(global_model):
 
 if __name__ == '__main__':
     global_model = ActorCritic()
-    global_model.share_memory()
+    global_model.share_memory()     # 얘네는 메모리 공유가 주된 기능
+    # dqn과 비슷하지만 얘네는 여러 개의 local model을 한번에 돌려서 global_model에 업데이트를 해준다.
 
     processes = []
     for rank in range(n_train_processes + 1):  # + 1 for test process

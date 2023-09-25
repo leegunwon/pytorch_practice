@@ -6,6 +6,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import plotly.graph_objects as go
+import numpy as np
+import time
+
+
 
 # Hyperparameters
 lr_mu = 0.0005
@@ -129,6 +134,9 @@ def soft_update(net, net_target):
 def main():
     env = gym.make('Pendulum-v1', max_episode_steps=200, autoreset=True)
     memory = ReplayBuffer()
+    score_list = []
+    max_score_list = []
+    max_score = -10000
 
     q, q_target = QNet(), QNet()
     q_target.load_state_dict(q.state_dict())
@@ -156,6 +164,8 @@ def main():
             score += r
             s = s_prime
             count += 1
+            if score > max_score:
+                max_score = score
 
         if memory.size() > 2000:
             for i in range(10):
@@ -165,10 +175,24 @@ def main():
 
         if n_epi % print_interval == 0 and n_epi != 0:
             print("# of episode :{}, avg score : {:.1f}".format(n_epi, score / print_interval))
+            score_list.append(score / print_interval)
+            max_score_list.append(max_score)
+            max_score = -1000
             score = 0.0
+
+
 
     env.close()
 
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=np.arange(len(score_list)), y=score_list, mode='lines', name='score'))
+    fig.add_trace(go.Scatter(x=np.arange(len(max_score_list)), y=max_score_list, mode='lines', name='max_score'))
+    fig.show()
+    fig.write_html("ddpg_ep_50000.html")
+
 
 if __name__ == '__main__':
+    t1 = time.time()
     main()
+    t2 = time.time()
+    print("time :", t2 - t1)

@@ -60,6 +60,7 @@ class PPO(nn.Module):
     def train_net(self):
         s, a, r, s_prime, done_mask, prob_a = self.make_batch()
 
+
         for i in range(K_epoch):  # k_epoch 만큼 반복 학습
             # 똑같은 데이터로 학습을 k_epoch 만큼 반복하는 이유는?
             # k_epoch 만큼 반복하면서 학습을 하면 더 안정적으로 학습이 가능하다고 함
