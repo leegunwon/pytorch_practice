@@ -98,14 +98,14 @@ def main():
     print_interval = 20
 
     for n_epi in range(10000):
-        s, _ = env.reset()
+        s = env.reset()
         done = False
         while not done:  # 한 에피소드
             for t in range(T_horizon):   # T_horizon 만큼 반복
                 prob = model.pi(torch.from_numpy(s).float())    # pi 네트워크로 부터 확률 얻음
                 m = Categorical(prob)    # 확률을 기반으로 카테고리 분포 생성
                 a = m.sample().item()    # 확률 분포의 확률대로 action 샘플링
-                s_prime, r, done, truncated, info = env.step(a)
+                s_prime, r, done, truncated, info = env.step([a])
 
                 model.put_data((s, a, r / 100.0, s_prime, prob[a].item(), done))  # 메모리에 저장
                 s = s_prime
