@@ -5,21 +5,22 @@ import torch.optim as optim
 from torch.distributions import Normal
 import numpy as np
 import time
+import os
 from gym.envs.mujoco.half_cheetah_v4 import HalfCheetahEnv
 
-from functools import reduce
 
 # Hyperparameters
 learning_rate = 0.0005
 gamma = 0.8
 lmbda = 0.8
-eps_clip = 0.2
+eps_clip = 0.3
 K_epoch = 8
 rollout_len = 10
 buffer_size = 32
 minibatch_size = 32
 
 
+os.makedirs('./model_weights', exist_ok=True)
 class PPO(nn.Module):
     def __init__(self):
         super(PPO, self).__init__()
@@ -47,46 +48,38 @@ class PPO(nn.Module):
         self.data.append(transition)
 
     def make_batch(self):
+        s_batch, a_batch, r_batch, s_prime_batch, prob_a_batch, done_batch = [], [], [], [], [], []
         data = []
+
         for j in range(buffer_size):
-            s_batch, a_batch, r_batch, s_prime_batch, prob_a_batch, done_batch = np.array([]), np.array([]), np.array([]), np.array([]),  np.array([]), np.array([])
             for i in range(minibatch_size):
                 rollout = self.data.pop()
-                s_lst, a_lst, r_lst, s_prime_lst, prob_a_lst, done_lst = np.array([]), np.array([]), np.array([]), np.array([]), np.array([]), np.array([])
+                s_lst, a_lst, r_lst, s_prime_lst, prob_a_lst, done_lst = [], [], [], [], [], []
 
                 for transition in rollout:
                     s, a, r, s_prime, prob_a, done = transition
 
-                    s_lst = np.append(s_lst, s)
-                    a_lst = np.append(a_lst, a)
-                    r_lst = np.append(r_lst, r)
-                    s_prime_lst = np.append(s_prime_lst, s_prime)
-                    prob_a_lst = np.append(prob_a_lst, prob_a)
+                    s_lst.append(s)
+                    a_lst.append(a)
+                    r_lst.append([r])
+                    s_prime_lst.append(s_prime)
+                    prob_a_lst.append(prob_a)
                     done_mask = 0 if done else 1
-                    done_lst = np.append(done_lst, [done_mask])
+                    done_lst.append([done_mask])
 
-                s_batch = np.append(s_batch, s_lst)
-                a_batch = np.append(a_batch, a_lst)
-                r_batch = np.append(r_batch, r_lst)
-                s_prime_batch = np.append(s_prime_batch, s_prime_lst)
-                prob_a_batch = np.append(prob_a_batch, prob_a_lst)
-                done_batch = np.append(done_batch, done_lst)
+                s_batch.append(s_lst)
+                a_batch.append(a_lst)
+                r_batch.append(r_lst)
+                s_prime_batch.append(s_prime_lst)
+                prob_a_batch.append(prob_a_lst)
+                done_batch.append(done_lst)
 
-            s_batch = s_batch.reshape(minibatch_size, rollout_len, 17)
-            s_prime_batch = s_prime_batch.reshape(minibatch_size, rollout_len, 17)
-            a_batch = a_batch.reshape(minibatch_size, rollout_len, 6)
-            r_batch = r_batch.reshape(minibatch_size, rollout_len, 1)
-            prob_a_batch = prob_a_batch.reshape(minibatch_size, rollout_len, 1)
-            done_batch = done_batch.reshape(minibatch_size, rollout_len, 1)
-
-            mini_batch = torch.from_numpy(s_batch).float(), torch.from_numpy(a_batch).float(), \
-                torch.from_numpy(r_batch).float(), torch.from_numpy(s_prime_batch).float(), \
-                torch.from_numpy(done_batch).float(), torch.from_numpy(prob_a_batch).float()
-
+            mini_batch = torch.tensor(s_batch, dtype=torch.float), torch.tensor(a_batch, dtype=torch.float), \
+                torch.tensor(r_batch, dtype=torch.float), torch.tensor(s_prime_batch, dtype=torch.float), \
+                torch.tensor(done_batch, dtype=torch.float), torch.tensor(prob_a_batch, dtype=torch.float)
             data.append(mini_batch)
 
         return data
-
 
     def sample_action(self, mu, std):
 
@@ -186,7 +179,7 @@ def main():
             score = 0.0
 
 
-    torch.save(model.state_dict(), '/.model_weights/agent_'+str(n_epi))
+    torch.save(model.state_dict(), './model_weights/agent_'+str(n_epi))
     env.close()
 
 
