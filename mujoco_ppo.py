@@ -13,7 +13,7 @@ from functools import reduce
 learning_rate = 0.0005
 gamma = 0.8
 lmbda = 0.8
-eps_clip = 0.1
+eps_clip = 0.2
 K_epoch = 8
 rollout_len = 10
 buffer_size = 32
@@ -34,7 +34,7 @@ class PPO(nn.Module):
 
     def pi(self, x, softmax_dim=0):
         x = F.relu(self.fc1(x))
-        mu = 2.0 * torch.tanh(self.fc_mu(x))     # 평균 생성
+        mu = 1.0 * torch.tanh(self.fc_mu(x))     # 평균 생성
         std = F.softplus(self.fc_std(x))        # 표준 편차
         return mu, std
 
@@ -48,9 +48,7 @@ class PPO(nn.Module):
 
     def make_batch(self):
         data = []
-        ime = 0
         for j in range(buffer_size):
-            ime += 1
             s_batch, a_batch, r_batch, s_prime_batch, prob_a_batch, done_batch = np.array([]), np.array([]), np.array([]), np.array([]),  np.array([]), np.array([])
             for i in range(minibatch_size):
                 rollout = self.data.pop()
@@ -91,16 +89,12 @@ class PPO(nn.Module):
 
 
     def sample_action(self, mu, std):
-        a = []
-        log_prob = 1.0
 
         dist = Normal(mu, std)
         a = dist.sample()
-        log_prob = dist.log_prob(a)
+        log_prob = dist.log_prob(a).sum(-1, keepdim=True)
         a = a.detach().numpy()
-        log_prob = reduce(lambda x, y: x*y, log_prob)
         log_prob = log_prob.detach().numpy()
-
         return a, log_prob
 
 
@@ -134,11 +128,18 @@ class PPO(nn.Module):
                 for mini_batch in data:
                     s, a, r, s_prime, done_mask, old_log_prob, td_target, advantage = mini_batch
 
+                    # 새로운 정책 네트워크에서 생성된 액션 확률 분포 생성
                     mu, std = self.pi(s)
-                    a, log_prob = self.sample_action(mu, std)
+                    dist = Normal(mu, std)
 
+                    # 새로운 액션 확률 분포 내에서 과거의 사용한 action이 도출될 확률 log_prob 계산
+                    log_prob = dist.log_prob(a).sum(-1, keepdim=True)
+                    log_prob = log_prob.detach().numpy()
+
+                    # 기존 액션 분포와 새로운 액션 분포 사이의 차이 계산
                     ratio = torch.exp(torch.from_numpy(log_prob).float() - old_log_prob)  # a/b == exp(log(a)-log(b))
 
+                    # 확률 분포 사이의 차이와 advantage를 곱해서
                     surr1 = ratio * advantage
                     surr2 = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip) * advantage
                     loss = -torch.min(surr1, surr2) + F.smooth_l1_loss(self.v(s), td_target)
@@ -159,14 +160,14 @@ def main():
     rollout = []
 
     for n_epi in range(5000):
-        env.render()
+        # env.render()
         s = env.reset()
         done = False
         count = 0
         while count < 1000 and not done:
             for t in range(rollout_len):
                 mu, std = model.pi(torch.from_numpy(s).float())
-                a, log_prob = model.sample_action(mu, std)
+                a, log_prob = model.sample_action(mu, std[0])
                 s_prime, r, done, truncated = env.step(a)
 
                 rollout.append((s, a, r, s_prime, log_prob, done))
@@ -182,12 +183,12 @@ def main():
 
         if n_epi % print_interval == 0 and n_epi != 0:
             print("# of episode :{}, avg score : {:.1f}".format(n_epi, score / print_interval))
+            score = 0.0
 
-    xml_model = env.model.get_xml()
-    with open('C:\laboratory\pytorch_prac\models\model.xml', 'w') as f:
-        f.write(xml_model)
 
+    torch.save(model.state_dict(), '/.model_weights/agent_'+str(n_epi))
     env.close()
+
 
 if __name__ == '__main__':
     t1 = time.time()
